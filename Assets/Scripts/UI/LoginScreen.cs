@@ -1,6 +1,5 @@
 ﻿using System;
 using UnityEngine;
-using UniRx;
 using UnityEngine.Assertions;
 using UnityEngine.UI;
 
@@ -8,13 +7,17 @@ namespace UI
 {
     public class LoginScreen : MonoBehaviour
     {
-        public LoginService LoginService;
+        [SerializeField]
+        private LoginService LoginService;
 
-        public UIService UIService;
+        [SerializeField]
+        private UIService UIService;
 
-        public Button LoginButton;
+        [SerializeField]
+        private Button LoginButton;
 
-        public Text ErrorMessage;
+        [SerializeField]
+        private Text ErrorMessage;
 
         public void Awake()
         {
@@ -22,8 +25,6 @@ namespace UI
             Assert.IsNotNull(LoginService);
             Assert.IsNotNull(UIService);
             Assert.IsNotNull(ErrorMessage);
-
-            LoginButton.OnClickAsObservable().Subscribe(_ => OnLoginButtonClicked());
         }
 
         public void OnEnable()
@@ -33,16 +34,6 @@ namespace UI
 
         public void OnLoginButtonClicked()
         {
-            LoginService.Login().Subscribe
-                (
-                 user =>
-                 {
-                     UIService.GoToUserScreen(user);
-                 },
-                 error =>
-                 {
-                     ErrorMessage.text = error.Message;
-                 });
         }
     }
 }

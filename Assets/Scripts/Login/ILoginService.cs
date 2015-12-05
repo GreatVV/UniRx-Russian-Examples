@@ -1,9 +1,6 @@
-﻿using UniRx;
-
-namespace Logic.Login
+﻿namespace Logic.Login
 {
     public interface ILoginService
     {
-        IObservable<IUser> Login();
     }
 }

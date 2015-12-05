@@ -1,7 +1,5 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
-using System.Collections;
-using UniRx;
 using UnityEngine.Assertions;
 
 namespace UI
@@ -21,12 +19,7 @@ namespace UI
             Assert.IsNotNull(UserNameText);
             Assert.IsNotNull(BackButton);
 
-            BackButton.OnClickAsObservable().Subscribe
-                (
-                 _ =>
-                 {
-                     UIService.GoToLoginScreen();
-                 });
+           
         }
 
         public void Init(IUser user)
