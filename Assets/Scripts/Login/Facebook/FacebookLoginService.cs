@@ -33,7 +33,7 @@ namespace Logic.Login.Facebook
                                                                 }
                                                                 else
                                                                 {
-                                                                    API("me?fields=name").Subscribe
+                                                                    FBObservable.API("me?fields=name").Subscribe
                                                                         (
                                                                          graphResult =>
                                                                          {
@@ -64,27 +64,6 @@ namespace Logic.Login.Facebook
                  });
         }
 
-        public IObservable<IGraphResult> API(string query)
-        {
-            return Observable.Create<IGraphResult>
-                (
-                 observer =>
-                 {
-                     FacebookDelegate<IGraphResult> callback = x =>
-                                                               {
-                                                                   if (string.IsNullOrEmpty(x.Error))
-                                                                   {
-                                                                       observer.OnNext(x);
-                                                                       observer.OnCompleted();
-                                                                   }
-                                                                   else
-                                                                   {
-                                                                       observer.OnError(new Exception(x.Error));
-                                                                   }
-                                                               };
-                     FB.API(query, HttpMethod.GET, callback);
-                     return Disposable.Empty;
-                 });
-        }
+        
     }
 }
