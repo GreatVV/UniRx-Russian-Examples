@@ -64,10 +64,9 @@ namespace UniRx.InternalUtil
 
     public class EmptyObserver<T> : IObserver<T>
     {
-        // .Instance cause iOS AOT error
-        // public static readonly EmptyObserver<T> Instance = new EmptyObserver<T>();
+        public static readonly EmptyObserver<T> Instance = new EmptyObserver<T>();
 
-        public EmptyObserver()
+        EmptyObserver()
         {
 
         }
@@ -87,10 +86,9 @@ namespace UniRx.InternalUtil
 
     public class DisposedObserver<T> : IObserver<T>
     {
-        // .Instance cause iOS AOT error
-        // public static readonly DisposedObserver<T> Instance = new DisposedObserver<T>();
+        public static readonly DisposedObserver<T> Instance = new DisposedObserver<T>();
 
-        public DisposedObserver()
+        DisposedObserver()
         {
 
         }

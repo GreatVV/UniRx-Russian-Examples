@@ -2,7 +2,6 @@
 using System.Collections;
 using UniRx.Diagnostics;
 using UnityEngine;
-using Logger = UniRx.Diagnostics.Logger;
 
 namespace UniRx.Examples
 {
@@ -10,7 +9,7 @@ namespace UniRx.Examples
     {
         // UniRx.Diagnostics.Logger
         // logger is threadsafe, define per class with name.
-        static readonly Logger logger = new Logger("Sample11");
+		static readonly UniRx.Diagnostics.Logger logger = new UniRx.Diagnostics.Logger("Sample11");
 
         // call once at applicationinit
         public void ApplicationInitialize()

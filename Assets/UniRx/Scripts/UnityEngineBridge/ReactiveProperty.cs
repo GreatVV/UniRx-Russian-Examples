@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-#if !UniRxLibrary
 using UnityEngine;
-#endif
 
 namespace UniRx
 {
@@ -20,17 +18,17 @@ namespace UniRx
     /// Lightweight property broker.
     /// </summary>
     [Serializable]
-    public class ReactiveProperty<T> : IReactiveProperty<T>, IDisposable
+    public class ReactiveProperty<T> : IReactiveProperty<T>, IDisposable, IOptimizedObservable<T>
     {
+        static readonly IEqualityComparer<T> defaultEqualityComparer = UnityEqualityComparer.GetDefault<T>();
+
         [NonSerialized]
         bool canPublishValueOnSubscribe = false;
 
         [NonSerialized]
         bool isDisposed = false;
 
-#if !UniRxLibrary
         [SerializeField]
-#endif
         T value = default(T);
 
         [NonSerialized]
@@ -38,6 +36,14 @@ namespace UniRx
 
         [NonSerialized]
         IDisposable sourceConnection = null;
+
+        protected virtual IEqualityComparer<T> EqualityComparer
+        {
+            get
+            {
+                return defaultEqualityComparer;
+            }
+        }
 
         public T Value
         {
@@ -52,38 +58,24 @@ namespace UniRx
                     canPublishValueOnSubscribe = true;
                     SetValue(value);
 
-                    if (isDisposed) return; // don't notify but set value 
-                    if (publisher != null)
+                    if (isDisposed) return; // don't notify but set value
+                    var p = publisher;
+                    if (p != null)
                     {
-                        publisher.OnNext(this.value);
+                        p.OnNext(this.value);
                     }
                     return;
                 }
 
-                if (value == null)
+                if (!EqualityComparer.Equals(this.value, value))
                 {
-                    if (this.value != null)
-                    {
-                        SetValue(value);
+                    SetValue(value);
 
-                        if (isDisposed) return; // don't notify but set value 
-                        if (publisher != null)
-                        {
-                            publisher.OnNext(this.value);
-                        }
-                    }
-                }
-                else
-                {
-                    if (this.value == null || !this.value.Equals(value)) // don't use EqualityComparer<T>.Default
+                    if (isDisposed) return;
+                    var p = publisher;
+                    if (p != null)
                     {
-                        SetValue(value);
-
-                        if (isDisposed) return;
-                        if (publisher != null)
-                        {
-                            publisher.OnNext(this.value);
-                        }
+                        p.OnNext(this.value);
                     }
                 }
             }
@@ -98,7 +90,7 @@ namespace UniRx
 
         public ReactiveProperty(T initialValue)
         {
-            value = initialValue;
+            SetValue(initialValue);
             canPublishValueOnSubscribe = true;
         }
 
@@ -109,10 +101,7 @@ namespace UniRx
 
             canPublishValueOnSubscribe = false;
             publisher = new Subject<T>();
-            sourceConnection = source.Subscribe(x =>
-            {
-                Value = x;
-            }, publisher.OnError, publisher.OnCompleted);
+            sourceConnection = source.Subscribe(new ReactivePropertyObserver(this));
         }
 
         public ReactiveProperty(IObservable<T> source, T initialValue)
@@ -120,10 +109,7 @@ namespace UniRx
             canPublishValueOnSubscribe = false;
             Value = initialValue;
             publisher = new Subject<T>();
-            sourceConnection = source.Subscribe(x =>
-            {
-                Value = x;
-            }, publisher.OnError, publisher.OnCompleted);
+            sourceConnection = source.Subscribe(new ReactivePropertyObserver(this));
         }
 
         protected virtual void SetValue(T value)
@@ -137,9 +123,10 @@ namespace UniRx
 
             if (isDisposed) return;
 
-            if (publisher != null)
+            var p = publisher;
+            if (p != null)
             {
-                publisher.OnNext(this.value);
+                p.OnNext(this.value);
             }
         }
 
@@ -153,15 +140,26 @@ namespace UniRx
 
             if (publisher == null)
             {
+                // Interlocked.CompareExchange is bit slower, guarantee threasafety is overkill.
+                // System.Threading.Interlocked.CompareExchange(ref publisher, new Subject<T>(), null);
                 publisher = new Subject<T>();
             }
 
-            var subscription = publisher.Subscribe(observer);
-            if (canPublishValueOnSubscribe)
+            var p = publisher;
+            if (p != null)
             {
-                observer.OnNext(value); // raise latest value on subscribe
+                var subscription = p.Subscribe(observer);
+                if (canPublishValueOnSubscribe)
+                {
+                    observer.OnNext(value); // raise latest value on subscribe
+                }
+                return subscription;
             }
-            return subscription;
+            else
+            {
+                observer.OnCompleted();
+                return Disposable.Empty;
+            }
         }
 
 
@@ -176,21 +174,23 @@ namespace UniRx
             if (!isDisposed)
             {
                 isDisposed = true;
-                if (sourceConnection != null)
+                var sc = sourceConnection;
+                if (sc != null)
                 {
-                    sourceConnection.Dispose();
+                    sc.Dispose();
                     sourceConnection = null;
                 }
-                if (publisher != null)
+                var p = publisher;
+                if (p != null)
                 {
                     // when dispose, notify OnCompleted
                     try
                     {
-                        publisher.OnCompleted();
+                        p.OnCompleted();
                     }
                     finally
                     {
-                        publisher.Dispose();
+                        p.Dispose();
                         publisher = null;
                     }
                 }
@@ -201,12 +201,49 @@ namespace UniRx
         {
             return (value == null) ? "null" : value.ToString();
         }
+
+        public bool IsRequiredSubscribeOnCurrentThread()
+        {
+            return false;
+        }
+
+        class ReactivePropertyObserver : IObserver<T>
+        {
+            readonly ReactiveProperty<T> parent;
+            int isStopped = 0;
+
+            public ReactivePropertyObserver(ReactiveProperty<T> parent)
+            {
+                this.parent = parent;
+            }
+
+            public void OnNext(T value)
+            {
+                parent.Value = value;
+            }
+
+            public void OnError(Exception error)
+            {
+                if (System.Threading.Interlocked.Increment(ref isStopped) == 1)
+                {
+                    parent.publisher.OnError(error);
+                }
+            }
+
+            public void OnCompleted()
+            {
+                if (System.Threading.Interlocked.Increment(ref isStopped) == 1)
+                {
+                    parent.publisher.OnCompleted();
+                }
+            }
+        }
     }
 
     /// <summary>
     /// Lightweight property broker.
     /// </summary>
-    public class ReadOnlyReactiveProperty<T> : IReadOnlyReactiveProperty<T>, IDisposable
+    public class ReadOnlyReactiveProperty<T> : IReadOnlyReactiveProperty<T>, IDisposable, IOptimizedObservable<T>
     {
         bool canPublishValueOnSubscribe = false;
 
@@ -229,24 +266,14 @@ namespace UniRx
         public ReadOnlyReactiveProperty(IObservable<T> source)
         {
             publisher = new Subject<T>();
-            sourceConnection = source.Subscribe(x =>
-            {
-                value = x;
-                canPublishValueOnSubscribe = true;
-                publisher.OnNext(x);
-            }, publisher.OnError, publisher.OnCompleted);
+            sourceConnection = source.Subscribe(new ReadOnlyReactivePropertyObserver(this));
         }
 
         public ReadOnlyReactiveProperty(IObservable<T> source, T initialValue)
         {
             value = initialValue;
             publisher = new Subject<T>();
-            sourceConnection = source.Subscribe(x =>
-            {
-                value = x;
-                canPublishValueOnSubscribe = true;
-                publisher.OnNext(x);
-            }, publisher.OnError, publisher.OnCompleted);
+            sourceConnection = source.Subscribe(new ReadOnlyReactivePropertyObserver(this));
         }
 
         public IDisposable Subscribe(IObserver<T> observer)
@@ -259,15 +286,26 @@ namespace UniRx
 
             if (publisher == null)
             {
+                // Interlocked.CompareExchange is bit slower, guarantee threasafety is overkill.
+                // System.Threading.Interlocked.CompareExchange(ref publisher, new Subject<T>(), null);
                 publisher = new Subject<T>();
             }
 
-            var subscription = publisher.Subscribe(observer);
-            if (canPublishValueOnSubscribe)
+            var p = publisher;
+            if (p != null)
             {
-                observer.OnNext(value); // raise latest value on subscribe
+                var subscription = p.Subscribe(observer);
+                if (canPublishValueOnSubscribe)
+                {
+                    observer.OnNext(value); // raise latest value on subscribe
+                }
+                return subscription;
             }
-            return subscription;
+            else
+            {
+                observer.OnCompleted();
+                return Disposable.Empty;
+            }
         }
 
         public void Dispose()
@@ -281,21 +319,24 @@ namespace UniRx
             if (!isDisposed)
             {
                 isDisposed = true;
-                if (sourceConnection != null)
+                var sc = sourceConnection;
+                if (sc != null)
                 {
-                    sourceConnection.Dispose();
+                    sc.Dispose();
                     sourceConnection = null;
                 }
-                if (publisher != null)
+
+                var p = publisher;
+                if (p != null)
                 {
                     // when dispose, notify OnCompleted
                     try
                     {
-                        publisher.OnCompleted();
+                        p.OnCompleted();
                     }
                     finally
                     {
-                        publisher.Dispose();
+                        p.Dispose();
                         publisher = null;
                     }
                 }
@@ -305,6 +346,45 @@ namespace UniRx
         public override string ToString()
         {
             return (value == null) ? "null" : value.ToString();
+        }
+
+        public bool IsRequiredSubscribeOnCurrentThread()
+        {
+            return false;
+        }
+
+        class ReadOnlyReactivePropertyObserver : IObserver<T>
+        {
+            readonly ReadOnlyReactiveProperty<T> parent;
+            int isStopped = 0;
+
+            public ReadOnlyReactivePropertyObserver(ReadOnlyReactiveProperty<T> parent)
+            {
+                this.parent = parent;
+            }
+
+            public void OnNext(T value)
+            {
+                parent.value = value;
+                parent.canPublishValueOnSubscribe = true;
+                parent.publisher.OnNext(value);
+            }
+
+            public void OnError(Exception error)
+            {
+                if (System.Threading.Interlocked.Increment(ref isStopped) == 1)
+                {
+                    parent.publisher.OnError(error);
+                }
+            }
+
+            public void OnCompleted()
+            {
+                if (System.Threading.Interlocked.Increment(ref isStopped) == 1)
+                {
+                    parent.publisher.OnCompleted();
+                }
+            }
         }
     }
 
