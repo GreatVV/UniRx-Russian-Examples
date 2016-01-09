@@ -9,23 +9,24 @@ public class TargetObject : MonoBehaviour
 {
     [SerializeField]
     private int _numberOfItems = 6;
+
     [SerializeField]
     private float _duration = 1f;
+
     [SerializeField]
     private Ease _ease = Ease.OutBounce;
 
     private List<GameObject> _children = new List<GameObject>();
 
     private IDisposable _subscription;
-    
 
     public void Start()
     {
-        //аналог метода Update
+        //следующая строчка - это аналог метода Update
         //Мы используем вспомогательную функцию UniRx - UpdateAsObservable
-        //Выбираем из нее все фрейм когда была нажата мышка используя Where
+        //Выбираем из нее все фреймы, когда была нажата мышка используя Where
         //Превращаем поток Unit в поток Vector3 в экранных координата используя Input.mousePosition и Select
-        //После чего подписываем на получившийся поток
+        //После чего подписываемся на получившийся поток
         //И на каждое событие пытаемся двигать объект в координаты клика
         gameObject.UpdateAsObservable()
                   .Where(x => Input.GetMouseButtonDown(0))
@@ -46,13 +47,17 @@ public class TargetObject : MonoBehaviour
              observable =>
              {
                  //создаем твиннер, который двигает объект в заданые координаты
-                 var tweener = transform.DOMove(targetPosition, _duration).SetEase(_ease).OnComplete(observable.OnCompleted);
-                 return Disposable.Create(
-                                          () =>
-                                          {
-                                              //при отмене или окончании подписки убиваем твиннер чтобы он остановился в том месте где сейчас
-                                              tweener.Kill();
-                                          });
+                 var tweener = transform.DOMove(targetPosition, _duration)
+                                        .SetEase(_ease)
+                                        .OnComplete(observable.OnCompleted);
+                 //метод Disposabe.Create(Action) - вспомогательный метод, получающий на вход Action, который вызывается каждый раз, когда вызван метод Dispose
+                 return Disposable.Create
+                     (
+                      () =>
+                      {
+                          //при отмене или окончании подписки убиваем твиннер чтобы объект остановился в том месте где сейчас
+                          tweener.Kill();
+                      });
              });
     }
 
@@ -69,12 +74,10 @@ public class TargetObject : MonoBehaviour
                      var angle = step * i;
                      var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
                      cube.transform.SetParent(transform, false);
-                     cube.transform.localPosition = new Vector3(
-                            2 * Mathf.Cos(angle),
-                            2 * Mathf.Sin(angle)
-                         );
+                     cube.transform.localPosition = new Vector3(2 * Mathf.Cos(angle), 2 * Mathf.Sin(angle));
                      _children.Add(cube);
                  }
+                 observable.OnCompleted();
                  return Disposable.Empty;
              });
     }
